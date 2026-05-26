@@ -1,0 +1,23 @@
+path: TrashVision/datasets/taco_yolo
+train: 'train/images'
+val: 'val/images'
+
+nc: 10
+names: [
+  'bateria',
+  'lata',
+  'papelão',
+  'caixinha',
+  'garrafa de vidro',
+  'papel',
+  'sacola plástica',
+  'garrafa plástica',
+  'tampa plástica',
+  'aba de lata']
+  
+roboflow:
+  workspace: fyp-bfx3h
+  project: yolov8-trash-detections
+  version: 6
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/fyp-bfx3h/yolov8-trash-detections/dataset/6
