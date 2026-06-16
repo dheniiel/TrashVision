@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Detecção de <em>Resíduos</em></h1>
+  <p class="page-sub">Sistema de visão computacional baseado em YOLO para identificação automática de lixo e resíduos em tempo real.</p>
+</div>
+
+<div class="cards-grid">
+  <a href="{{ url_for('camera') }}" class="feature-card">
+    <div class="card-glyph">◉</div>
+    <h2>Câmera ao Vivo</h2>
+    <p>Detecte resíduos em tempo real usando a câmera do seu dispositivo. Análise quadro a quadro com baixa latência.</p>
+    <span class="card-arrow">→</span>
+  </a>
+
+  <a href="{{ url_for('image') }}" class="feature-card">
+    <div class="card-glyph">▣</div>
+    <h2>Analisar Imagem</h2>
+    <p>Faça upload de fotos (JPG, PNG, WEBP) para identificar e classificar todos os resíduos presentes na cena.</p>
+    <span class="card-arrow">→</span>
+  </a>
+
+  <a href="{{ url_for('video') }}" class="feature-card">
+    <div class="card-glyph">▷</div>
+    <h2>Processar Vídeo</h2>
+    <p>Analise vídeos completos (MP4, AVI, MOV) com processamento assíncrono e download do resultado anotado.</p>
+    <span class="card-arrow">→</span>
+  </a>
+</div>
+
+<div class="info-section">
+  <div class="info-block">
+    <h3>Classes Detectadas</h3>
+    <div class="class-tags">
+      {% set classes = [
+        ('garrafa_plastico','Garrafa Plástica'),('lata_aluminio','Lata de Alumínio'),
+        ('caixa_papelao','Caixa de Papelão'),('saco_plastico','Saco Plástico'),
+        ('copo_descartavel','Copo Descartável'),('papel','Papel'),
+        ('vidro','Vidro'),('residuo_organico','Resíduo Orgânico'),
+        ('bateria','Bateria'),('eletronico','Eletrônico'),
+        ('pneu','Pneu'),('metal','Metal')
+      ] %}
+      {% for key, label in classes %}
+        <span class="class-tag">{{ label }}</span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="info-block">
+    <h3>Como usar</h3>
+    <ol class="how-list">
+      <li>Escolha um dos três modos de detecção acima</li>
+      <li>Permita acesso à câmera <em>ou</em> faça upload do arquivo</li>
+      <li>Aguarde a análise e veja os resultados anotados</li>
+      <li>Baixe o resultado ou use diretamente na interface</li>
+    </ol>
+  </div>
+
+  {% if not model_loaded %}
+  <div class="info-block demo-notice">
+    <h3>⚠ Modo Demonstração Ativo</h3>
+    <p>Nenhum modelo YOLO foi encontrado. O sistema está simulando detecções para demonstração. Para ativar a detecção real:</p>
+    <pre class="code-block">mkdir model/
+# Copie seu arquivo best.pt para:
+cp seu_modelo.pt model/best.pt
+# Reinicie a aplicação</pre>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

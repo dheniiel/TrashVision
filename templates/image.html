@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Detectar Imagem{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Analisar <em>Imagem</em></h1>
+  <p class="page-sub">Faça upload de uma foto e o modelo identificará todos os resíduos presentes.</p>
+</div>
+
+{% if not model_loaded %}
+<div class="demo-banner demo-banner--page">Modo demonstração — detecções são simuladas</div>
+{% endif %}
+
+<div class="image-layout">
+  <div class="upload-panel">
+    <div class="dropzone" id="dropzone">
+      <div class="dz-idle" id="dzIdle">
+        <div class="dz-icon">▣</div>
+        <p>Arraste uma imagem aqui<br>ou <label for="fileInput" class="dz-link">clique para selecionar</label></p>
+        <span class="dz-hint">JPG · PNG · WEBP · BMP · GIF</span>
+      </div>
+      <img id="previewImg" style="display:none" alt="Preview" />
+      <input type="file" id="fileInput" accept="image/*" style="display:none" />
+    </div>
+
+    <div class="upload-actions">
+      <button id="btnDetect" class="btn btn-primary" disabled>
+        <span class="btn-icon">⬡</span> Detectar Resíduos
+      </button>
+      <button id="btnClear" class="btn btn-secondary" disabled>
+        Limpar
+      </button>
+    </div>
+  </div>
+
+  <div class="result-panel" id="resultPanel" style="display:none">
+    <h2>Resultado</h2>
+    <div class="result-image-wrap">
+      <img id="resultImg" alt="Resultado da detecção" />
+      <a id="resultDownload" class="btn btn-accent btn-sm" download="resultado.jpg">⬇ Baixar resultado</a>
+    </div>
+    <div class="result-stats">
+      <div class="stat-box">
+        <span class="stat-num" id="totalCount">0</span>
+        <span class="stat-label">Resíduos detectados</span>
+      </div>
+    </div>
+    <div id="detSummary" class="det-summary"></div>
+  </div>
+</div>
+
+<div id="spinnerOverlay" class="spinner-overlay" style="display:none">
+  <div class="spinner"></div>
+  <p>Analisando imagem…</p>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/image.js') }}"></script>
+{% endblock %}

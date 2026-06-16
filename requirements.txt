@@ -1,18 +1,5 @@
-# TrashVision — Requisitos
-# Instale com: pip install -r requirements.txt
-
-# Detecção de objetos com YOLO
-ultralytics>=8.0.0
-
-# Visão computacional
+flask>=2.3.0
 opencv-python>=4.8.0
-
-# Manipulação de imagens (tkinter ↔ OpenCV)
-Pillow>=10.0.0
-
-# Interface gráfica (incluída no Python padrão)
-# tkinter — instale python3-tk se necessário (Linux):
-#   sudo apt install python3-tk
-
-# Opcional: interface mais moderna
-# customtkinter>=5.2.0
+numpy>=1.24.0
+werkzeug>=2.3.0
+ultralytics>=8.0.0

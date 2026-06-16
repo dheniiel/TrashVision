@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Detectar Vídeo{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Processar <em>Vídeo</em></h1>
+  <p class="page-sub">Faça upload de um vídeo e obtenha a versão anotada com todas as detecções.</p>
+</div>
+
+{% if not model_loaded %}
+<div class="demo-banner demo-banner--page">Modo demonstração — detecções são simuladas</div>
+{% endif %}
+
+<div class="video-upload-layout">
+  <div class="upload-panel">
+    <div class="dropzone" id="dropzone">
+      <div class="dz-idle" id="dzIdle">
+        <div class="dz-icon">▷</div>
+        <p>Arraste um vídeo aqui<br>ou <label for="fileInput" class="dz-link">clique para selecionar</label></p>
+        <span class="dz-hint">MP4 · AVI · MOV · MKV · WEBM — até 500 MB</span>
+      </div>
+      <video id="previewVideo" style="display:none" controls></video>
+      <input type="file" id="fileInput" accept="video/*" style="display:none" />
+    </div>
+
+    <div class="upload-actions">
+      <button id="btnProcess" class="btn btn-primary" disabled>
+        <span class="btn-icon">▷</span> Processar Vídeo
+      </button>
+      <button id="btnClear" class="btn btn-secondary" disabled>
+        Limpar
+      </button>
+    </div>
+  </div>
+
+  <div class="progress-panel" id="progressPanel" style="display:none">
+    <h2>Processando…</h2>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="progressBar" style="width:0%"></div>
+    </div>
+    <p class="progress-pct" id="progressPct">0%</p>
+    <p class="progress-msg">O vídeo está sendo analisado em segundo plano.<br>Isso pode levar alguns minutos dependendo da duração.</p>
+  </div>
+
+  <div class="result-panel" id="resultPanel" style="display:none">
+    <h2>Vídeo Processado</h2>
+    <video id="resultVideo" controls></video>
+    <a id="resultDownload" class="btn btn-accent btn-sm" download="resultado.mp4">⬇ Baixar vídeo</a>
+    <div class="result-stats">
+      <div class="stat-box">
+        <span class="stat-num" id="totalCount">0</span>
+        <span class="stat-label">Detecções totais</span>
+      </div>
+    </div>
+    <div id="detSummary" class="det-summary"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/video.js') }}"></script>
+{% endblock %}

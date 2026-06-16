@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Câmera ao Vivo{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Câmera <em>ao Vivo</em></h1>
+  <p class="page-sub">Detecção de resíduos em tempo real via câmera.</p>
+</div>
+
+<div class="camera-layout">
+  <div class="camera-panel">
+    <div class="video-wrapper" id="videoWrapper">
+      <video id="videoFeed" autoplay playsinline muted></video>
+      <canvas id="overlayCanvas"></canvas>
+      <div class="scan-line" id="scanLine"></div>
+      <div class="camera-idle" id="cameraIdle">
+        <div class="idle-icon">◉</div>
+        <p>Clique em <strong>Iniciar Câmera</strong></p>
+      </div>
+    </div>
+
+    <div class="camera-controls">
+      <button id="btnStart" class="btn btn-primary">
+        <span class="btn-icon">◉</span> Iniciar Câmera
+      </button>
+      <button id="btnStop" class="btn btn-secondary" disabled>
+        <span class="btn-icon">◼</span> Parar
+      </button>
+      <button id="btnSnap" class="btn btn-accent" disabled>
+        <span class="btn-icon">▣</span> Capturar
+      </button>
+      <label class="select-wrap">
+        <span>FPS análise</span>
+        <select id="fpsSel">
+          <option value="500">2 fps</option>
+          <option value="250" selected>4 fps</option>
+          <option value="100">10 fps</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <div class="results-panel">
+    <div class="results-header">
+      <h2>Detecções</h2>
+      <span class="counter" id="detCount">0</span>
+    </div>
+
+    {% if not model_loaded %}
+    <div class="demo-banner">Modo demonstração — detecções são simuladas</div>
+    {% endif %}
+
+    <div id="detectionList" class="detection-list">
+      <p class="empty-msg">Nenhuma detecção ainda.<br>Inicie a câmera para começar.</p>
+    </div>
+
+    <div class="snapshot-preview" id="snapshotArea" style="display:none">
+      <h3>Última Captura</h3>
+      <img id="snapshotImg" alt="Captura anotada" />
+      <a id="snapshotDownload" class="btn btn-secondary btn-sm" download="captura.jpg">⬇ Baixar</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/camera.js') }}"></script>
+{% endblock %}
