@@ -39,13 +39,18 @@
       <div class="progress-bar" id="progressBar" style="width:0%"></div>
     </div>
     <p class="progress-pct" id="progressPct">0%</p>
-    <p class="progress-msg">O vídeo está sendo analisado em segundo plano.<br>Isso pode levar alguns minutos dependendo da duração.</p>
+    <p class="progress-msg">O vídeo está sendo analisado em segundo plano.<br>Isso pode levar alguns minutos dependendo
+      da duração.</p>
   </div>
 
   <div class="result-panel" id="resultPanel" style="display:none">
-    <h2>Vídeo Processado</h2>
-    <video id="resultVideo" controls></video>
-    <a id="resultDownload" class="btn btn-accent btn-sm" download="resultado.mp4">⬇ Baixar vídeo</a>
+    <h2>Detecção em Tempo Real</h2>
+
+    <!-- ALTERAÇÃO: stream de frames anotados via multipart -->
+    <img id="streamImg" src="" alt="Stream de detecção" style="width:100%; border-radius:8px; display:none">
+
+    <!-- Botão de download removido — não há vídeo salvo em disco -->
+
     <div class="result-stats">
       <div class="stat-box">
         <span class="stat-num" id="totalCount">0</span>

@@ -1,20 +1,22 @@
-const dropzone     = document.getElementById('dropzone');
-const fileInput    = document.getElementById('fileInput');
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
 const previewVideo = document.getElementById('previewVideo');
-const dzIdle       = document.getElementById('dzIdle');
-const btnProcess   = document.getElementById('btnProcess');
-const btnClear     = document.getElementById('btnClear');
-const progressPanel  = document.getElementById('progressPanel');
-const progressBar    = document.getElementById('progressBar');
-const progressPct    = document.getElementById('progressPct');
-const resultPanel    = document.getElementById('resultPanel');
-const resultVideo    = document.getElementById('resultVideo');
-const resultDownload = document.getElementById('resultDownload');
-const totalCount     = document.getElementById('totalCount');
-const detSummary     = document.getElementById('detSummary');
+const dzIdle = document.getElementById('dzIdle');
+const btnProcess = document.getElementById('btnProcess');
+const btnClear = document.getElementById('btnClear');
+const progressPanel = document.getElementById('progressPanel');
+const progressBar = document.getElementById('progressBar');
+const progressPct = document.getElementById('progressPct');
+const resultPanel = document.getElementById('resultPanel');
+//const resultVideo = document.getElementById('resultVideo');
+//const resultDownload = document.getElementById('resultDownload');
+const totalCount = document.getElementById('totalCount');
+const detSummary = document.getElementById('detSummary');
+const streamImg = document.getElementById('streamImg');
+
 
 let selectedFile = null;
-let pollTimer    = null;
+let pollTimer = null;
 
 // ── Drag & drop ──
 dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragging'); });
@@ -40,9 +42,9 @@ function setFile(f) {
   previewVideo.style.display = 'block';
   dzIdle.style.display = 'none';
   btnProcess.disabled = false;
-  btnClear.disabled   = false;
+  btnClear.disabled = false;
   progressPanel.style.display = 'none';
-  resultPanel.style.display   = 'none';
+  resultPanel.style.display = 'none';
 }
 
 btnClear.addEventListener('click', () => {
@@ -53,9 +55,9 @@ btnClear.addEventListener('click', () => {
   dzIdle.style.display = 'flex';
   fileInput.value = '';
   btnProcess.disabled = true;
-  btnClear.disabled   = false;
+  btnClear.disabled = false;
   progressPanel.style.display = 'none';
-  resultPanel.style.display   = 'none';
+  resultPanel.style.display = 'none';
 });
 
 // ── Process ──
@@ -70,14 +72,14 @@ btnProcess.addEventListener('click', async () => {
   progressBar.style.width = '0%';
   progressPct.textContent = '0%';
   resultPanel.style.display = 'none';
-  progressPanel.scrollIntoView({ behavior:'smooth', block:'start' });
+  progressPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   try {
-    const res  = await fetch('/api/detect/video', { method:'POST', body: form });
+    const res = await fetch('/api/detect/video', { method: 'POST', body: form });
     const data = await res.json();
-    if (data.error) { alert('Erro: ' + data.error); progressPanel.style.display='none'; return; }
+    if (data.error) { alert('Erro: ' + data.error); progressPanel.style.display = 'none'; return; }
     pollJob(data.job_id);
-  } catch(e) {
+  } catch (e) {
     alert('Erro ao enviar vídeo.');
     progressPanel.style.display = 'none';
   }
@@ -86,7 +88,7 @@ btnProcess.addEventListener('click', async () => {
 function pollJob(jobId) {
   pollTimer = setInterval(async () => {
     try {
-      const res  = await fetch(`/api/job/${jobId}`);
+      const res = await fetch(`/api/job/${jobId}`);
       const data = await res.json();
 
       progressBar.style.width = data.progress + '%';
@@ -101,17 +103,20 @@ function pollJob(jobId) {
         alert('Erro ao processar vídeo: ' + data.error);
         btnProcess.disabled = false;
       }
-    } catch(e) { /* retry next tick */ }
+    } catch (e) { /* retry next tick */ }
   }, 800);
 }
 
 function showResult(data) {
   progressPanel.style.display = 'none';
-  resultVideo.src = data.result_url;
-  resultDownload.href = data.result_url;
+
+  // Aponta a <img> para o endpoint de streaming
+  streamImg.src = data.stream_url;   // ex: /api/detect/video/stream/<job_id>
+  streamImg.style.display = 'block';
+
   totalCount.textContent = data.count;
-  detSummary.innerHTML   = buildSummary(data.summary || {});
+  detSummary.innerHTML = buildSummary(data.summary || {});
   resultPanel.style.display = 'flex';
-  resultPanel.scrollIntoView({ behavior:'smooth', block:'start' });
+  resultPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   btnProcess.disabled = false;
 }

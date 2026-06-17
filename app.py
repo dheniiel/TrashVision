@@ -2,23 +2,30 @@
 app.py — TrashVision Flask Web Interface
 Adaptado ao repositório dheniiel/TrashVision
 
-Caminhos do modelo (em ordem de prioridade):
-  1. runs/detect/yolo_taco_cpu_v1-6/weights/best.pt  (modelo treinado no TACO)
-  2. runs/detect/yolo_taco_cpu_v2/weights/best.pt     (modelo v2 se existir)
-  3. Qualquer best.pt encontrado em runs/detect/
-  4. yolo11s.pt / yolo11n.pt / yolov8n.pt             (modelos base do repo)
+Alterações em relação ao original:
+  1. Modelo yolo_taco_cpu_v2 definido como PRIMEIRA prioridade de busca.
+  2. Detecção de vídeo via streaming (SSE/multipart) — sem salvar o vídeo
+     processado em disco nem exigir download pelo usuário.
+     O cliente recebe os frames anotados em tempo real pelo endpoint
+     GET /api/detect/video/stream/<job_id> (multipart/x-mixed-replace).
 """
 
 import os
 import sys
 import uuid
 import base64
+import io
 import cv2
 import numpy as np
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import (
+    Flask, render_template, request, jsonify,
+    send_from_directory, Response, stream_with_context,
+)
 from werkzeug.utils import secure_filename
 import threading
 import glob
+import queue
+import time
 
 # ── garante que módulos locais (core/, ui/) sejam encontrados ──────────────
 sys.path.insert(0, os.path.dirname(__file__))
@@ -40,29 +47,30 @@ MODEL        = None
 MODEL_LOADED = False
 MODEL_ERROR  = None
 MODEL_PATH   = None
-DEFAULT_CONF = 0.25   # mesmo padrão usado em webcam_detection.py
+DEFAULT_CONF = 0.25
 
-# Ordem de busca de modelos — espelha a estrutura real do repositório
+# ALTERAÇÃO 1 — yolo_taco_cpu_v2 é a PRIMEIRA opção na lista de candidatos.
 CANDIDATE_PATHS = [
-    # Melhor modelo treinado (v1-6 — usado no webcam_detection.py)
-    r'runs\detect\yolo_taco_cpu_v1-6\weights\best.pt',
-    'runs/detect/yolo_taco_cpu_v1-6/weights/best.pt',
-    # Modelo v2 (train.py mais recente)
+    # ── PRIORIDADE 1: modelo v2 (nova versão treinada) ──────────────────────
     r'runs\detect\yolo_taco_cpu_v2\weights\best.pt',
     'runs/detect/yolo_taco_cpu_v2/weights/best.pt',
-    # Qualquer best.pt em runs/detect/
+    # ── PRIORIDADE 2: modelo v1-6 (versão anterior) ─────────────────────────
+    r'runs\detect\yolo_taco_cpu_v1-6\weights\best.pt',
+    'runs/detect/yolo_taco_cpu_v1-6/weights/best.pt',
+    # ── PRIORIDADE 3: qualquer best.pt em runs/detect/ ──────────────────────
     'runs/detect/*/weights/best.pt',
-    # Modelos base incluídos no repo
+    # ── PRIORIDADE 4: modelos base incluídos no repositório ─────────────────
     'yolo11s.pt',
     'yolo11n.pt',
     'yolov8n.pt',
 ]
 
+
 def find_model():
     """Retorna o primeiro caminho de modelo válido encontrado."""
     for pattern in CANDIDATE_PATHS:
         if '*' in pattern:
-            matches = sorted(glob.glob(pattern), reverse=True)  # mais recente primeiro
+            matches = sorted(glob.glob(pattern), reverse=True)
             for m in matches:
                 if os.path.exists(m):
                     return m
@@ -71,13 +79,16 @@ def find_model():
                 return pattern
     return None
 
+
 def load_model():
     global MODEL, MODEL_LOADED, MODEL_ERROR, MODEL_PATH
     path = find_model()
     if not path:
         MODEL_ERROR = (
             "Nenhum modelo encontrado. Caminhos verificados: "
-            "runs/detect/yolo_taco_cpu_v/weights/best.pt, yolo11s.pt, etc."
+            "runs/detect/yolo_taco_cpu_v2/weights/best.pt, "
+            "runs/detect/yolo_taco_cpu_v1-6/weights/best.pt, "
+            "yolo11s.pt, etc."
         )
         print(f"⚠  {MODEL_ERROR}")
         return
@@ -95,6 +106,7 @@ def load_model():
         MODEL_ERROR = str(e)
         print(f"❌ Erro ao carregar modelo: {e}")
 
+
 load_model()
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -104,34 +116,34 @@ load_model()
 def run_inference(frame, conf=None):
     """
     Roda o modelo no frame e retorna (frame_anotado, lista_de_detecções).
-    conf: limiar de confiança (padrão: DEFAULT_CONF, igual ao webcam_detection.py)
     """
     if conf is None:
         conf = DEFAULT_CONF
 
     if MODEL and MODEL_LOADED:
-        # Usa o mesmo padrão do webcam_detection.py: model.predict(source=frame, conf=conf)
-        results = MODEL.predict(source=frame, conf=conf, verbose=False)
-        annotated = results[0].plot()   # mesmo método usado no webcam_detection.py
+        results    = MODEL.predict(source=frame, conf=conf, verbose=False)
+        annotated  = results[0].plot()
         detections = []
         for box in results[0].boxes:
-            cls_id = int(box.cls[0])
-            label  = results[0].names.get(cls_id, f'classe_{cls_id}')
-            c      = float(box.conf[0])
+            cls_id        = int(box.cls[0])
+            label         = results[0].names.get(cls_id, f'classe_{cls_id}')
+            c             = float(box.conf[0])
             x1, y1, x2, y2 = map(int, box.xyxy[0])
-            detections.append({'label': label, 'confidence': round(c, 3),
-                                'bbox': [x1, y1, x2, y2]})
+            detections.append({
+                'label': label, 'confidence': round(c, 3),
+                'bbox':  [x1, y1, x2, y2],
+            })
         return annotated, detections
 
     # ── Modo demonstração (sem modelo) ──────────────────────────────────────
     DEMO_LABELS = [
         'Aluminium foil', 'Battery', 'Bottle', 'Bottle cap', 'Can',
         'Carton', 'Cigarette', 'Cup', 'Lid', 'Paper', 'Plastic bag',
-        'Plastic film', 'Pop tab', 'Straw', 'Styrofoam piece', 'Wrapper'
+        'Plastic film', 'Pop tab', 'Straw', 'Styrofoam piece', 'Wrapper',
     ]
-    annotated = frame.copy()
-    h, w = frame.shape[:2]
-    labels = np.random.choice(DEMO_LABELS, size=np.random.randint(1, 4), replace=False)
+    annotated  = frame.copy()
+    h, w       = frame.shape[:2]
+    labels     = np.random.choice(DEMO_LABELS, size=np.random.randint(1, 4), replace=False)
     detections = []
     for label in labels:
         x1 = np.random.randint(0, w // 2)
@@ -146,8 +158,7 @@ def run_inference(frame, conf=None):
         cv2.rectangle(annotated, (x1, y1 - th - 8), (x1 + tw + 6, y1), color, -1)
         cv2.putText(annotated, tag, (x1 + 3, y1 - 4),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 1)
-        detections.append({'label': label, 'confidence': c,
-                           'bbox': [x1, y1, x2, y2]})
+        detections.append({'label': label, 'confidence': c, 'bbox': [x1, y1, x2, y2]})
     return annotated, detections
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -160,6 +171,10 @@ def allowed_video(f): return '.' in f and f.rsplit('.', 1)[1].lower() in ALLOWED
 def frame_to_b64(frame):
     _, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
     return base64.b64encode(buf).decode('utf-8')
+
+def frame_to_jpg_bytes(frame):
+    _, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    return buf.tobytes()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Rotas — páginas
@@ -204,6 +219,7 @@ def api_status():
         'default_conf': DEFAULT_CONF,
     })
 
+
 @app.route('/api/detect/frame', methods=['POST'])
 def detect_frame():
     """Câmera ao vivo — recebe frame base64, retorna frame anotado."""
@@ -212,22 +228,22 @@ def detect_frame():
         return jsonify({'error': 'Frame não fornecido'}), 400
 
     conf = float(data.get('conf', DEFAULT_CONF))
-    conf = max(0.05, min(0.95, conf))   # clamp igual ao webcam_detection.py
+    conf = max(0.05, min(0.95, conf))
 
     try:
-        b64 = data['frame'].split(',')[-1]
+        b64       = data['frame'].split(',')[-1]
         img_bytes = base64.b64decode(b64)
-        nparr = np.frombuffer(img_bytes, np.uint8)
-        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        nparr     = np.frombuffer(img_bytes, np.uint8)
+        frame     = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if frame is None:
             return jsonify({'error': 'Frame inválido'}), 400
 
         annotated, detections = run_inference(frame, conf=conf)
         return jsonify({
             'annotated_frame': 'data:image/jpeg;base64,' + frame_to_b64(annotated),
-            'detections': detections,
-            'count': len(detections),
-            'demo_mode': not MODEL_LOADED,
+            'detections':      detections,
+            'count':           len(detections),
+            'demo_mode':       not MODEL_LOADED,
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -247,9 +263,9 @@ def detect_image():
     conf = max(0.05, min(0.95, conf))
 
     try:
-        uid  = str(uuid.uuid4())[:8]
-        ext  = file.filename.rsplit('.', 1)[1].lower()
-        src  = os.path.join(app.config['UPLOAD_FOLDER'], f'{uid}.{ext}')
+        uid   = str(uuid.uuid4())[:8]
+        ext   = file.filename.rsplit('.', 1)[1].lower()
+        src   = os.path.join(app.config['UPLOAD_FOLDER'], f'{uid}.{ext}')
         file.save(src)
 
         frame = cv2.imread(src)
@@ -276,11 +292,33 @@ def detect_image():
         return jsonify({'error': str(e)}), 500
 
 
-# ── Processamento de vídeo assíncrono ─────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
+# ALTERAÇÃO 2 — Detecção de vídeo via streaming (sem download do vídeo)
+#
+# Fluxo:
+#   1. POST /api/detect/video        → recebe o arquivo, cria um job e inicia
+#                                       uma thread que produz frames anotados
+#                                       numa Queue.
+#   2. GET  /api/detect/video/stream/<job_id>
+#                                    → abre uma resposta multipart/x-mixed-replace
+#                                       e envia os JPEGs da fila em tempo real,
+#                                       sem que o cliente precise baixar nada.
+#   3. GET  /api/job/<job_id>        → retorna metadados (progresso, resumo,
+#                                       detecções) SEM URL de vídeo.
+# ──────────────────────────────────────────────────────────────────────────────
 
-video_jobs = {}
+# Dicionário global de jobs  {job_id: {...}}
+video_jobs: dict[str, dict] = {}
 
-def process_video_job(job_id, input_path, conf):
+# Tamanho máximo da fila de frames por job (limita uso de memória)
+FRAME_QUEUE_MAX = 60
+
+
+def process_video_streaming(job_id: str, input_path: str, conf: float):
+    """
+    Lê o vídeo, roda inferência e empurra frames anotados (JPEG bytes)
+    para a fila do job.  Não grava nenhum arquivo de resultado em disco.
+    """
     job = video_jobs[job_id]
     try:
         cap = cv2.VideoCapture(input_path)
@@ -288,34 +326,38 @@ def process_video_job(job_id, input_path, conf):
             job.update({'status': 'error', 'error': 'Não foi possível abrir o vídeo'})
             return
 
-        fps    = cap.get(cv2.CAP_PROP_FPS) or 25
-        width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        total  = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
-
-        out_name = f'result_{job_id}.mp4'
-        out_path = os.path.join(app.config['RESULTS_FOLDER'], out_name)
-        fourcc   = cv2.VideoWriter_fourcc(*'mp4v')
-        writer   = cv2.VideoWriter(out_path, fourcc, fps, (width, height))
+        fps       = cap.get(cv2.CAP_PROP_FPS) or 25
+        total     = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
+        SKIP      = max(1, int(fps // 5))   # ~5 inferências/seg
 
         all_dets  = []
         frame_idx = 0
-        SKIP = max(1, int(fps // 5))  # ~5 inferências/seg
+        last_annotated = None
 
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
+
             if frame_idx % SKIP == 0:
                 annotated, dets = run_inference(frame, conf=conf)
-                for _ in range(SKIP):
-                    writer.write(annotated)
+                last_annotated  = annotated
                 all_dets.extend(dets)
-            frame_idx += 1
-            job['progress'] = min(99, int(frame_idx / total * 100))
+            else:
+                # repete o último frame anotado para manter a fluidez
+                annotated = last_annotated if last_annotated is not None else frame
+
+            # Envia para a fila (bloqueia se cheia para não consumir memória)
+            jpg = frame_to_jpg_bytes(annotated)
+            job['frame_queue'].put(jpg, timeout=10)
+
+            frame_idx          += 1
+            job['progress']     = min(99, int(frame_idx / total * 100))
 
         cap.release()
-        writer.release()
+
+        # Sinaliza fim da stream
+        job['frame_queue'].put(None)
 
         summary = {}
         for d in all_dets:
@@ -324,18 +366,24 @@ def process_video_job(job_id, input_path, conf):
         job.update({
             'status':     'done',
             'progress':   100,
-            'result_url': f'/static/results/{out_name}',
             'detections': all_dets[:300],
             'summary':    summary,
             'count':      len(all_dets),
             'demo_mode':  not MODEL_LOADED,
         })
+
     except Exception as e:
         job.update({'status': 'error', 'error': str(e)})
+        job['frame_queue'].put(None)   # desbloqueia consumidores
 
 
 @app.route('/api/detect/video', methods=['POST'])
 def detect_video():
+    """
+    Recebe o vídeo, cria job de streaming e retorna o job_id.
+    O cliente deve abrir GET /api/detect/video/stream/<job_id> para
+    visualizar os frames em tempo real — sem baixar o vídeo processado.
+    """
     if 'video' not in request.files:
         return jsonify({'error': 'Nenhum vídeo enviado'}), 400
 
@@ -352,22 +400,78 @@ def detect_video():
         fpath  = os.path.join(app.config['UPLOAD_FOLDER'], f'{job_id}.{ext}')
         file.save(fpath)
 
-        video_jobs[job_id] = {'status': 'processing', 'progress': 0}
-        t = threading.Thread(target=process_video_job, args=(job_id, fpath, conf))
-        t.daemon = True
+        video_jobs[job_id] = {
+            'status':      'processing',
+            'progress':    0,
+            'frame_queue': queue.Queue(maxsize=FRAME_QUEUE_MAX),
+            # URL da stream para o cliente usar
+            'stream_url':  f'/api/detect/video/stream/{job_id}',
+        }
+
+        t = threading.Thread(
+            target=process_video_streaming,
+            args=(job_id, fpath, conf),
+            daemon=True,
+        )
         t.start()
 
-        return jsonify({'job_id': job_id, 'status': 'processing'})
+        return jsonify({
+            'job_id':     job_id,
+            'status':     'processing',
+            'stream_url': f'/api/detect/video/stream/{job_id}',
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/job/<job_id>')
-def job_status(job_id):
+@app.route('/api/detect/video/stream/<job_id>')
+def video_stream(job_id: str):
+    """
+    Endpoint de streaming multipart/x-mixed-replace.
+    O cliente (tag <img> ou fetch com ReadableStream) recebe os frames
+    anotados em tempo real, sem precisar baixar o vídeo resultante.
+
+    Exemplo de uso no template HTML:
+        <img id="stream" src="/api/detect/video/stream/{{ job_id }}">
+    """
     job = video_jobs.get(job_id)
     if not job:
         return jsonify({'error': 'Job não encontrado'}), 404
-    return jsonify(job)
+
+    def generate():
+        fq: queue.Queue = job['frame_queue']
+        while True:
+            try:
+                jpg = fq.get(timeout=30)   # aguarda até 30 s pelo próximo frame
+            except queue.Empty:
+                break                      # timeout — encerra stream
+
+            if jpg is None:                # sentinela de fim
+                break
+
+            yield (
+                b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n\r\n'
+                + jpg +
+                b'\r\n'
+            )
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='multipart/x-mixed-replace; boundary=frame',
+    )
+
+
+@app.route('/api/job/<job_id>')
+def job_status(job_id: str):
+    """Retorna metadados do job (progresso, resumo de detecções, etc.)."""
+    job = video_jobs.get(job_id)
+    if not job:
+        return jsonify({'error': 'Job não encontrado'}), 404
+
+    # Remove a fila (não serializável) antes de retornar
+    safe = {k: v for k, v in job.items() if k != 'frame_queue'}
+    return jsonify(safe)
 
 
 @app.route('/static/results/<path:filename>')
