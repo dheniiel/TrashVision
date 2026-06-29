@@ -52,7 +52,3 @@ A interface gráfica será aberta. A partir dela você pode:
 - Ativar a **câmera** para detecção em tempo real
 
 ---
-
----
-
-<p align="center">Feito com 💚 para um mundo mais limpo</p>
